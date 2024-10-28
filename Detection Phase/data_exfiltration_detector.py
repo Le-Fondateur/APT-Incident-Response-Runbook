@@ -1,35 +1,39 @@
 import pandas as pd
 import logging
 from datetime import datetime, timedelta
+from sqlalchemy import create_engine
 
 # Configure logging
 logging.basicConfig(filename='data_exfiltration_detector.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Path to network activity data
-NETWORK_ACTIVITY_FILE = "network_activity.csv"
+# Database configuration
+DATABASE_URI = 'mysql+pymysql://username:password@localhost/db_name'
 
-# Function to load network activity data
-def load_network_activity(file_path):
+# Load network activity data
+def load_network_activity():
     try:
-        data = pd.read_csv(file_path)
-        logging.info(f"Successfully loaded network activity data from {file_path}")
+        # Create database engine
+        engine = create_engine(DATABASE_URI)
+        query = """
+        SELECT timestamp, ip_address, direction, data_transfer_size
+        FROM network_activity_log
+        WHERE direction = 'outbound'
+        """
+        data = pd.read_sql(query, engine)
+        logging.info("Successfully loaded network activity data from the database")
         return data
-    except FileNotFoundError:
-        logging.error(f"Network activity file not found: {file_path}")
-        raise
     except Exception as e:
         logging.error(f"Error occurred while loading network activity data: {str(e)}")
         raise
 
-# Function to detect data exfiltration patterns
+# Detect data exfiltration patterns
 def detect_data_exfiltration(data):
     try:
-        # Filter outbound traffic and identify potential exfiltration patterns
-        outbound_traffic = data[data['direction'] == 'outbound']
-        large_transfers = outbound_traffic[outbound_traffic['data_transfer_size'] > 1000000]  # Example threshold: 1MB
+        # Identify large outbound data transfers
+        large_transfers = data[data['data_transfer_size'] > 1000000] 
 
-        # Identify slow and gradual exfiltration over time
+        # Identify gradual exfiltration over time
         grouped = large_transfers.groupby('ip_address').agg({
             'timestamp': ['min', 'max'],
             'data_transfer_size': 'sum'
@@ -51,13 +55,10 @@ def detect_data_exfiltration(data):
 
 if __name__ == "__main__":
     try:
-        # Load network activity data
-        network_activity_data = load_network_activity(NETWORK_ACTIVITY_FILE)
+        network_activity_data = load_network_activity()
 
-        # Detect data exfiltration patterns
         exfiltration_detected = detect_data_exfiltration(network_activity_data)
 
-        # Summary of data exfiltration detected
         logging.info(f"Total data exfiltration incidents detected: {len(exfiltration_detected)}")
         print(f"Total data exfiltration incidents detected: {len(exfiltration_detected)}")
     except Exception as e:
